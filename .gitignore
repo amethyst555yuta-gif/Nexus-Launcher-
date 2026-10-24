@@ -1,0 +1,5 @@
+.minecraft_custom/
+*.log
+__pycache__/
+nexus_global_settings.json
+launcher_config.json

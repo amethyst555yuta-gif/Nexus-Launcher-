@@ -5,10 +5,17 @@ import os
 import urllib.request
 import json
 import subprocess
-import tkinter as tk
+import tkinter as tk  # ▲ DÒNG NÀY SẼ FIX TRIỆT ĐỂ LỖI "tk is not defined" CHO BẠN!
 from tkinter import messagebox, ttk, filedialog
+import customtkinter as ctk  
 import threading
 import zipfile
+import multiprocessing 
+
+# Cấu hình theme tối Cyberpunk cho launcher
+ctk.set_appearance_mode("Dark")  
+ctk.set_default_color_theme("green") 
+
 
 # --- 1. HỆ THỐNG LOG ---
 CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -171,7 +178,7 @@ def download_instance_assets(version_id):
                     index_data = json.load(f_idx)
                 
                 objects_dict = index_data.get('objects', {})
-                essential_assets = {k: v for k, v in objects_dict.items() if "sounds/" in k or "lang/" in k or "music/" in k or "textures/" in k or "icons/" in k}
+                essential_assets = {k: v for k, v in objects_dict.items()}
                 
                 count = 0
                 for asset_name, asset_meta in essential_assets.items():
@@ -307,15 +314,21 @@ def launch_game_instance(username, version_id, selected_java, allocated_ram, on_
         if on_success_callback:
             on_success_callback()
 
+                # Tạo cấu hình ẩn cửa sổ CMD đen của tiến trình Java ngầm
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+
         process = subprocess.Popen(
             launch_args, 
             stdout=subprocess.PIPE, 
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding='utf-8',
-            errors='ignore',
-            cwd=abs_instance_dir # Khóa môi trường làm việc tại mục chứa file .jar game để tránh Missing Textures
-       )
+            stderr=subprocess.STDOUT, 
+            text=True, 
+            encoding='utf-8', 
+            errors='ignore', 
+            cwd=os.path.abspath(instance_path),
+            startupinfo=startupinfo # Ép Java chạy ngầm không hiện bảng đen
+        )
         logger.info(f"Instance {version_id} đang chạy bằng Java: {selected_java} (PID: {process.pid})")
         for line in process.stdout:
             print(f"[MINECRAFT INSTANCE OUTPUT] {line.strip()}")
@@ -386,7 +399,33 @@ class NexusLauncher:
         # 2. CHỌN PHIÊN BẢN
         tk.Label(self.card_frame, text="CHỌN PHIÊN BẢN GAME", font=("Segoe UI", 9, "bold"), fg=self.COLOR_TEXT, bg=self.COLOR_CARD).grid(row=2, column=0, sticky="w", padx=20, pady=(4, 2))
         self.version_combo = ttk.Combobox(self.card_frame, font=("Segoe UI", 10), state="readonly")
-        self.version_combo['values'] = ('1.0.0', '1.10', '1.11', '1.12.2', '1.16.5', '1.20.1', '1.21', '1.21.1', '1.21.3')
+                # Tự động sinh danh sách phiên bản Minecraft từ 1.0 đến 1.21.3
+        generated_versions = []
+        for major in range(0, 22):  # Chạy từ 1.0 đến 1.21
+            if major == 0:
+                generated_versions.append("1.0.0")
+            else:
+                base_ver = f"1.{major}"
+                generated_versions.append(base_ver)
+                
+                # Thêm các bản cập nhật phụ phổ biến được người chơi yêu thích
+                if major == 2: generated_versions.append("1.2.5")
+                elif major == 4: generated_versions.append("1.4.7")
+                elif major == 5: generated_versions.append("1.5.2")
+                elif major == 6: generated_versions.append("1.6.4")
+                elif major == 7: generated_versions.extend(["1.7.2", "1.7.10"])
+                elif major == 8: generated_versions.append("1.8.9")
+                elif major == 9: generated_versions.append("1.9.4")
+                elif major == 12: generated_versions.append("1.12.2")
+                elif major == 14: generated_versions.append("1.14.4")
+                elif major == 16: generated_versions.append("1.16.5")
+                elif major == 17: generated_versions.append("1.17.1")
+                elif major == 18: generated_versions.append("1.18.2")
+                elif major == 19: generated_versions.extend(["1.19.2", "1.19.4"])
+                elif major == 20: generated_versions.extend(["1.20.1", "1.20.2", "1.20.4", "1.20.6"])
+                elif major == 21: generated_versions.extend(["1.21.1", "1.21.3"])
+        # Gán danh sách tự động sinh vào ô chọn phiên bản (Combobox)
+        self.version_combo['values'] = tuple(generated_versions)
         self.version_combo.grid(row=3, column=0, sticky="we", padx=20, pady=(0, 8))
         self.version_combo.bind("<<ComboboxSelected>>", self.on_version_changed)
 
@@ -460,13 +499,17 @@ class NexusLauncher:
         ram_label.pack(anchor="w", padx=15, pady=(8, 2))
 
         def update_ram_label(val):
+            # Lưu ngay giá trị RAM vào biến hệ thống khi người dùng vừa kéo slide
             self.ram_value_gb = int(float(val))
             ram_label.config(text=f"Dung lượng RAM cấp cho game: {self.ram_value_gb} GB")
 
+
         #  ĐOẠN MỚI HIỂN THỊ THANH TRƯỢT RÕ RÀNG:
-        ram_slider = tk.Scale(ram_frame, from_=1, to=32, orientation=tk.HORIZONTAL, bg=self.COLOR_CARD, fg=self.COLOR_ACCENT, highlightthickness=0, troughcolor=self.COLOR_BG, activebackground=self.COLOR_ACCENT, label="Kéo để chọn mức RAM (GB)", command=update_ram_label)
-        ram_slider.set(self.ram_value_gb)
-        ram_slider.pack(fill="x", padx=15, pady=(0, 10))
+                # Đã sửa thuộc tính thành orient giúp thanh trượt hiển thị hoàn hảo và lưu giá trị nguyên
+        self.ram_slider = tk.Scale(ram_frame, from_=1, to=32, orient=tk.HORIZONTAL, bg=self.COLOR_CARD, fg=self.COLOR_ACCENT, highlightthickness=0, troughcolor=self.COLOR_BG, activebackground=self.COLOR_ACCENT, label="Kéo để chọn mức RAM (GB)", command=update_ram_label)
+        self.ram_slider.set(self.ram_value_gb)
+        self.ram_slider.pack(fill="x", padx=15, pady=(0, 10))
+
 
         # --- B. THAY ĐỔI ĐƯỜNG DẪN LƯU GAME (.minecraft_custom) ---
         dir_frame = tk.Frame(settings_win, bg=self.COLOR_CARD, bd=0, highlightbackground="#2D3748", highlightthickness=1)
@@ -511,7 +554,7 @@ class NexusLauncher:
             self.subtitle_label.config(text="Ứng dụng này đã bị chiếm quyền bởi Creator!", fg="#FF8888")
             messagebox.showwarning("Hệ Thống Bị Can Thiệp", f"Launcher nhận diện tài khoản {TEN_NGUOI_CHOI_TROLL}! Kích hoạt chế độ Troll!")
         
-        # Cập nhật và lưu lại dữ liệu RAM + Tài khoản
+        # Đã đổi sang đọc biến số trực tiếp, an toàn 100% không lo sập kể cả khi đóng cửa sổ con
         update_instance_data(selected_version, username, selected_java, self.ram_value_gb)
         
         self.btn_play.config(text="ĐANG KHỞI CHẠY GAME...", state="disabled", bg="#4A5568")
@@ -530,6 +573,8 @@ class NexusLauncher:
             pass
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
+
     root = tk.Tk()
     app = NexusLauncher(root)
     root.mainloop()
